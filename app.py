@@ -1,26 +1,56 @@
-# --- Main Classification Function --- CORRECTED ---
-def classify_content(text_content):
-    """Preprocesses and classifies the given text, showing results."""
-    if not text_content.strip():
-        st.warning("⚠️ Please provide some text to analyze.")
-        return
+import streamlit as st
+import pickle
+import re
+import string
+from nltk.corpus import stopwords
+from nltk.stem import WordNetLemmatizer
+import nltk
+from PIL import Image
+import pytesseract
 
-    # 1. Preprocess the input text
-    processed_text = preprocess_text(text_content)
+# --- Pre-loading and Function Definitions ---
 
-    # 2. Vectorize the processed text using the loaded vectorizer
-    vectorized_text = loaded_vectorizer.transform([processed_text])
+# This function will run once and cache the resources
+@st.cache_resource
+def load_resources():
+    """Load the saved model, vectorizer, and NLTK data."""
+    # Load model and vectorizer
+    try:
+        with open('phishing_detector_model.pkl', 'rb') as model_file:
+            model = pickle.load(model_file)
+        with open('tfidf_vectorizer.pkl', 'rb') as vectorizer_file:
+            vectorizer = pickle.load(vectorizer_file)
+    except FileNotFoundError:
+        return None, None # Return None if files are not found
 
-    # 3. Predict using the model with the correct features
-    prediction = loaded_model.predict(vectorized_text)[0]
-    prediction_proba = loaded_model.predict_proba(vectorized_text)[0]
+    # Download NLTK data if not already present
+    try:
+        nltk.data.find('tokenizers/punkt')
+    except nltk.downloader.DownloadError:
+        nltk.download('punkt', quiet=True)
+    try:
+        nltk.data.find('corpora/stopwords')
+    except nltk.downloader.DownloadError:
+        nltk.download('stopwords', quiet=True)
+    try:
+        nltk.data.find('corpora/wordnet')
+    except nltk.downloader.DownloadError:
+        nltk.download('wordnet', quiet=True)
+    
+    return model, vectorizer
 
-    # Display results
-    st.write("---")
-    st.subheader("Analysis Result")
-    if prediction == 1:
-        confidence = prediction_proba[1]
-        st.error(f"Result: PHISHING 🎣 (Confidence: {confidence:.2%})")
-    else:
-        confidence = prediction_proba[0]
-        st.success(f"Result: LEGITIMATE ✅ (Confidence: {confidence:.2%})")
+# Call the function to load everything
+loaded_model, loaded_vectorizer = load_resources()
+
+# Define the preprocessing function (must be the same as in training)
+lemmatizer = WordNetLemmatizer()
+stop_words = set(stopwords.words('english'))
+
+def preprocess_text(text):
+    text = text.lower() # Lowercase
+    text = re.sub(r'http\S+|www\S+|https\S+', '', text, flags=re.MULTILINE) # Remove URLs
+    text = re.sub(r'<.*?>', '', text) # Remove HTML tags
+    text = text.translate(str.maketrans('', '', string.punctuation)) # Remove punctuation
+    text = re.sub(r'\d+', '', text) # Remove numbers
+    tokens = nltk.word_tokenize(text) # Tokenize
+    lemmatized_tokens = [lemmatizer.lemmatize(word) for word in
